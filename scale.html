@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#fafaf7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e0e" media="(prefers-color-scheme: dark)">
+<title>Smart Scale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  /* ==================== Theme (forced dark, Figma palette) ==================== */
+  :root {
+    --bg: #0e0e0e;
+    --surface: #2a2a2c;
+    --surface-2: #1c1c1e;
+    --text: #f0f0f0;
+    --text-muted: #8c8c8c;
+    --text-faint: #555;
+    --border: rgba(255,255,255,0.06);
+    --accent: #f0f0f0;
+    --accent-soft: #d8d7d0;
+    --stable: #6fbf80;
+    --stable-soft: rgba(111, 191, 128, 0.12);
+    --measuring: #d4a55c;
+    --danger: #f85149;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+    --shadow-lg: 0 4px 20px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  /* ==================== Base ==================== */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "SF Pro Text", BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(16px, 4vw, 32px) clamp(12px, 4vw, 24px);
+    min-height: 100vh;
+    overscroll-behavior: none;
+  }
+  .app {
+    width: 100%;
+    max-width: 980px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* ==================== Header ==================== */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 6px;
+  }
+  .brand {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--text-muted);
+    padding: 4px 4px;
+    border-radius: 999px;
+    background: transparent;
+    transition: color 0.2s;
+    text-transform: uppercase;
+  }
+  .status .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .status.connected { color: var(--text); }
+  .status.connected .dot { background: #c8c8c8; box-shadow: 0 0 6px rgba(255,255,255,0.4); }
+  .status.connected .dot { background: var(--measuring); }
+  .status.stable .dot    { background: var(--stable); }
+  .status.stable {
+    background: var(--stable-soft);
+    color: var(--stable);
+  }
+  .status.measuring .dot { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% {opacity:1} 50% {opacity:0.3} }
+
+  /* ==================== Hero display ==================== */
+  .hero {
+    background: var(--surface);
+    border-radius: 24px;
+    padding: 56px 24px 44px;
+    text-align: center;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 0%, var(--stable-soft) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity 0.4s;
+    pointer-events: none;
+  }
+  .hero.is-stable::before { opacity: 1; }
+
+  .weight-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 12px;
+    position: relative;
+  }
+  .weight-sign {
+    font-size: clamp(36px, 8vw, 48px);
+    font-weight: 200;
+    color: var(--text-muted);
+    line-height: 1;
+  }
+  .weight {
+    font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+    font-size: clamp(72px, 18vw, 104px);
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    transition: color 0.25s ease;
+  }
+  .hero.is-stable .weight { color: var(--stable); }
+  .unit-label {
+    margin-top: 14px;
+    font-size: 15px;
+    color: var(--text-muted);
+    letter-spacing: 0.12em;
+    text-transform: lowercase;
+  }
+  .meta {
+    margin-top: 18px;
+    font-size: 11px;
+    font-family: "SF Mono", "Menlo", monospace;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    min-height: 14px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ==================== History strip ==================== */
+  .history {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 6px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    min-height: 36px;
+  }
+  .history::-webkit-scrollbar { display: none; }
+  .history-empty {
+    width: 100%;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 36px;
+    letter-spacing: 0.05em;
+  }
+  .chip {
+    flex: 0 0 auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+    scroll-snap-align: start;
+    transition: opacity 0.3s;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } }
+  .chip-time {
+    color: var(--text-faint);
+    font-size: 10px;
+    margin-right: 6px;
+  }
+
+  /* ==================== Controls ==================== */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .row { display: flex; gap: 8px; }
+
+  button {
+    flex: 1;
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.08s ease, background 0.15s, border-color 0.15s, color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: var(--shadow);
+  }
+  button:hover:not(:disabled) { border-color: var(--text-muted); }
+  button:active:not(:disabled) { transform: scale(0.985); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+  }
+  button.primary:hover:not(:disabled) {
+    background: var(--accent-soft);
+    border-color: var(--accent-soft);
+  }
+  button.tare {
+    flex: 2;
+    font-weight: 600;
+  }
+  button.subtle {
+    flex: 1;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  button.danger { color: var(--danger); }
+
+  /* ==================== Unit segmented control ==================== */
+  .segmented {
+    display: flex;
+    background: var(--surface-2);
+    border-radius: 14px;
+    padding: 4px;
+    gap: 2px;
+    border: 1px solid var(--border);
+  }
+  .segmented button {
+    flex: 1;
+    box-shadow: none;
+    background: transparent;
+    border: none;
+    padding: 11px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-radius: 10px;
+    transition: background 0.18s, color 0.18s;
+    letter-spacing: 0.04em;
+  }
+  .segmented button:hover:not(.active) {
+    color: var(--text);
+  }
+  .segmented button.active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+  }
+
+  /* ==================== Tare badge ==================== */
+  .tare-banner {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--surface-2);
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .tare-banner.active { display: inline-flex; }
+  .tare-banner::before {
+    content: "";
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* ==================== Log ==================== */
+  .log {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    min-height: 16px;
+    padding: 0 8px;
+    letter-spacing: 0.02em;
+  }
+  .log.error { color: var(--danger); }
+
+  /* ==================== Graph ==================== */
+  .graph-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 18px 16px 14px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .graph-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 4px;
+  }
+  .graph-title {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  .graph-readout {
+    display: flex;
+    gap: 14px;
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 12px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .graph-readout .k {
+    color: var(--text-faint);
+    margin-right: 4px;
+  }
+  canvas#graph {
+    width: 100%;
+    height: 240px;
+    background: var(--surface-2);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+  .graph-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ==================== Tune panel ==================== */
+  .tune {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    column-gap: 12px;
+    row-gap: 10px;
+    align-items: center;
+    padding: 14px 14px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .tune-head {
+    grid-column: 1 / -1;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .tune-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .tune-val {
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 12px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    min-width: 36px;
+    text-align: right;
+  }
+  .tune input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+  .tune input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .tune input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  /* ==================== Topbar (NVSCL_) ==================== */
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 6px;
+  }
+  .brand {
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0.4em;
+    color: var(--text);
+    text-transform: uppercase;
+  }
+  .brand .cursor {
+    display: inline-block;
+    margin-left: 2px;
+    animation: blink-cursor 1.1s steps(1) infinite;
+  }
+  @keyframes blink-cursor { 50% { opacity: 0; } }
+
+  /* ==================== Main grid (weight + chassis) ==================== */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.35fr;
+    gap: 14px;
+  }
+  @media (max-width: 720px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+
+  /* === Weight panel (top-left) === */
+  .weight-panel {
+    padding: 32px 28px;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+  .c-weight-row {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .c-weight-sign {
+    font-size: clamp(32px, 6vw, 48px);
+    font-weight: 200;
+    color: var(--text-muted);
+    line-height: 1;
+  }
+  .c-weight-num {
+    font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, sans-serif;
+    font-size: clamp(80px, 13vw, 132px);
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    transition: color 0.2s;
+  }
+  .c-weight.is-stable .c-weight-num { color: var(--stable); }
+  .c-weight-unit {
+    font-size: clamp(28px, 4.5vw, 44px);
+    font-weight: 300;
+    color: var(--text-muted);
+    margin-left: 6px;
+    letter-spacing: 0;
+    text-transform: lowercase;
+  }
+  .c-meta {
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 14px;
+    min-height: 12px;
+    letter-spacing: 0.06em;
+  }
+
+  /* === Chassis panel (top-right) === */
+  .chassis-panel {
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Scale top illustration: grid + circular platform */
+  .scale-illust {
+    flex: 1 1 auto;
+    min-height: 220px;
+    border-radius: 8px;
+    background-color: #050505;
+    background-image:
+      repeating-linear-gradient(to right, rgba(255,255,255,0.08) 0 1px, transparent 1px 44px),
+      repeating-linear-gradient(to bottom, rgba(255,255,255,0.08) 0 1px, transparent 1px 44px);
+    background-size: 44px 44px;
+    background-position: -1px -1px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scale-platform {
+    width: 44%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+      repeating-linear-gradient(-25deg,
+        rgba(255,255,255,0.18) 0 1px,
+        transparent 1px 4px),
+      radial-gradient(circle at 50% 35%, #d8d8d8 0%, #909090 35%, #4a4a4a 70%, #1a1a1a 100%);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.05),
+      0 8px 22px rgba(0,0,0,0.6),
+      inset 0 -8px 20px rgba(0,0,0,0.5);
+  }
+
+  /* Chassis bottom row: button labels + small OLED */
+  .chassis-bottom {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 0 4px;
+  }
+
+  /* Hardware "label-style" buttons matching the Figma */
+  .hw-label-btn {
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    line-height: 1.25;
+    text-transform: uppercase;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s, opacity 0.15s;
+  }
+  .hw-label-btn:hover:not(:disabled) { color: #fff; }
+  .hw-label-btn:active:not(:disabled) { opacity: 0.5; }
+  .hw-label-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .hw-label-btn.is-active { color: var(--stable); }
+  .hw-label-btn.is-rec { color: #ff7a55; }
+  .hw-label-btn.right { text-align: right; }
+  .hw-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-end;
+  }
+
+  /* Small OLED inside the chassis */
+  .oled {
+    width: 124px;
+    height: 50px;
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 3px;
+    padding: 3px 5px;
+    color: #ffffff;
+    font-family: "VT323", "SF Mono", monospace;
+    line-height: 1;
+    display: grid;
+    grid-template-columns: 50px 1fr;
+    gap: 4px;
+    overflow: hidden;
+    position: relative;
+    margin: 0 auto;
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.05),
+      inset 0 0 8px rgba(120,200,240,0.05);
+  }
+  .oled-trace {
+    width: 50px;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+  .oled-readout {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1px 0;
+    overflow: hidden;
+  }
+  .oled-time {
+    font-size: 14px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+  }
+  .oled-weight-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    line-height: 1;
+  }
+  .oled-arrow {
+    font-size: 14px;
+    line-height: 1;
+    color: #fff;
+  }
+  .oled-arrow.up   { color: #ffd166; }
+  .oled-arrow.down { color: #ff8a75; }
+  .oled-arrow.ok   { color: #6bf09a; }
+  .oled-weight {
+    font-size: 17px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* === PARAMETERS panel (bottom) === */
+  .params-panel {
+    padding: 22px 22px 18px;
+    position: relative;
+    min-height: 80px;
+  }
+  .panel-label {
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .params-content { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Disconnected weight dimming */
+  body.disconnected .c-weight-num { color: var(--text-faint); }
+  body.disconnected .c-weight-unit { color: var(--text-faint); }
+
+  .meta-line {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 6px;
+  }
+
+  /* ==================== Disconnected dim ==================== */
+  body.disconnected .weight { color: var(--text-faint); }
+  body.disconnected .unit-label { color: var(--text-faint); }
+</style>
+</head>
+<body class="disconnected">
+
+<div class="app">
+
+  <!-- Topbar: brand + connection status -->
+  <header class="topbar">
+    <div class="brand">N V S C L<span class="cursor">_</span></div>
+    <div class="status" id="status">
+      <span class="dot"></span>
+      <span id="statusText">DISCONNECTED</span>
+    </div>
+  </header>
+
+  <!-- Main grid: weight panel (left) + chassis panel (right) -->
+  <div class="main-grid">
+
+    <!-- Left: large weight readout -->
+    <div class="panel weight-panel c-weight" id="cWeight">
+      <div class="c-weight-row">
+        <span class="c-weight-sign" id="weightSign"></span>
+        <span class="c-weight-num" id="weight">0.0</span>
+        <span class="c-weight-unit" id="unitLabel">g</span>
+      </div>
+      <div class="c-meta" id="meta"></div>
+    </div>
+
+    <!-- Right: chassis mock (scale top + bottom row) -->
+    <div class="panel chassis-panel">
+      <!-- Scale top: grid background + circular platform -->
+      <div class="scale-illust" aria-hidden="true">
+        <div class="scale-platform"></div>
+      </div>
+
+      <!-- Bottom row inside chassis: button labels + small OLED -->
+      <div class="chassis-bottom">
+        <button class="hw-label-btn" id="recordBtn" disabled>
+          START<br>STOP
+        </button>
+
+        <div class="oled" id="oled">
+          <canvas class="oled-trace" id="oledTrace" width="50" height="44"></canvas>
+          <div class="oled-readout">
+            <div class="oled-time" id="oledTime">00:00</div>
+            <div class="oled-weight-row">
+              <span class="oled-arrow" id="oledArrow">·</span>
+              <span class="oled-weight" id="oledWeight">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hw-stack">
+          <button class="hw-label-btn right" id="connectBtn">ON/OFF</button>
+          <button class="hw-label-btn right" id="tareBtn" disabled>TARE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- meta line under main grid -->
+  <div class="meta-line"></div>
+
+  <!-- PARAMETERS panel containing graph + tuning + extras -->
+  <div class="panel params-panel">
+    <div class="panel-label">PARAMETERS</div>
+    <div class="params-content">
+
+  <div class="graph-card">
+    <div class="graph-header">
+      <div class="graph-title">FLOW</div>
+      <div class="graph-readout">
+        <span><span class="k">t</span><span id="graphTime">0.0s</span></span>
+        <span><span class="k">flow</span><span id="graphFlow">0.0 g/s</span></span>
+      </div>
+    </div>
+    <canvas id="graph"></canvas>
+    <div class="graph-controls">
+      <div class="segmented" id="axisSegment" role="tablist">
+        <button class="active" data-axis="flow" role="tab">流速 g/s</button>
+        <button data-axis="weight" role="tab">重量 g</button>
+      </div>
+      <div class="row">
+        <button class="subtle" id="resetBtn" disabled>計測リセット</button>
+      </div>
+      <div class="tune">
+        <div class="tune-head">調整</div>
+        <span class="tune-label">重量平滑 α</span>
+        <input type="range" id="tuneWE" min="0.01" max="1" step="0.01" value="0.07">
+        <span class="tune-val" id="tuneWEVal">0.07</span>
+        <span class="tune-label">流速平滑 α</span>
+        <input type="range" id="tuneFE" min="0.01" max="1" step="0.01" value="0.10">
+        <span class="tune-val" id="tuneFEVal">0.10</span>
+        <span class="tune-label">流速窓</span>
+        <input type="range" id="tuneFW" min="0.5" max="10" step="0.5" value="3">
+        <span class="tune-val" id="tuneFWVal">3.0s</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="history" id="history">
+    <div class="history-empty">安定した計測値はここに記録されます</div>
+  </div>
+
+  <div class="tare-banner" id="tareBanner"></div>
+
+  <div class="controls">
+    <div class="row">
+      <button class="subtle" id="zeroBtn" disabled>Tare 解除</button>
+    </div>
+
+    <div class="segmented" id="unitSegment" role="tablist">
+      <button class="active" data-unit="g" role="tab">g</button>
+      <button data-unit="oz" role="tab">oz</button>
+      <button data-unit="ml" role="tab">ml</button>
+    </div>
+  </div>
+
+    </div><!-- /.params-content -->
+  </div><!-- /.params-panel -->
+
+  <div class="log" id="log">ON/OFF を押して MY_SCALE に接続してください</div>
+</div>
+
+<script>
+"use strict";
+
+// === GATT UUIDs (KT630B / MY_SCALE) ===
+const SERVICE_UUID = "0000ffb0-0000-1000-8000-00805f9b34fb";
+const NOTIFY_UUID  = "0000ffb2-0000-1000-8000-00805f9b34fb";
+const TARGET_NAME  = "MY_SCALE";
+
+// === State ===
+let bleDevice = null, bleServer = null, notifyChar = null;
+let lastRawWeightG = 0;
+let lastStable = false;
+let tareOffsetG = 0;
+let currentUnit = "g";
+
+// 履歴: 最後の安定値 (g) を記憶。連続同値はスキップ
+const HISTORY_MAX = 5;
+let history = [];   // {grams, time:Date}
+let lastStableLogged = null;
+let stableSince = null;  // 連続安定検出用
+
+// === DOM ===
+const $ = (id) => document.getElementById(id);
+const heroEl    = $("cWeight");
+const weightEl  = $("weight");
+const signEl    = $("weightSign");
+const unitEl    = $("unitLabel");
+const metaEl    = $("meta");
+const statusEl  = $("status");
+const stTextEl  = $("statusText");
+const logEl     = $("log");
+const histEl    = $("history");
+const tareBanner = $("tareBanner");
+const connectBtn = $("connectBtn");
+const tareBtn = $("tareBtn");
+const zeroBtn = $("zeroBtn");
+// OLED elements
+const oledTimeEl   = $("oledTime");
+const oledWeightEl = $("oledWeight");
+const oledArrowEl  = $("oledArrow");
+const oledTraceCanvas = $("oledTrace");
+const oledTraceCtx = oledTraceCanvas.getContext("2d");
+
+// 理想プロファイルの累積重量 (補間用) — t秒時点での目標累積g
+// IDEAL_FLOW を台形積分したもの (理想抽出は ~400g, ~180s)
+const IDEAL_CUM = (() => {
+  // 計算用の流速プロファイル (定義は後ろの IDEAL_FLOW と同期)
+  const F = [[0,0],[20,0.8],[45,2.0],[60,3.2],[75,3.8],[90,4.0],
+             [105,3.8],[120,3.0],[150,1.8],[170,0.5],[180,0]];
+  const out = [[0, 0]];
+  let acc = 0;
+  for (let i = 1; i < F.length; i++) {
+    const [t0, v0] = F[i-1], [t1, v1] = F[i];
+    acc += 0.5 * (v0 + v1) * (t1 - t0);
+    out.push([t1, acc]);
+  }
+  return out;
+})();
+const IDEAL_TOTAL = IDEAL_CUM[IDEAL_CUM.length - 1][1]; // ~400g
+
+function idealCumWeightAt(t) {
+  if (t <= 0) return 0;
+  if (t >= IDEAL_CUM[IDEAL_CUM.length - 1][0]) return IDEAL_TOTAL;
+  for (let i = 1; i < IDEAL_CUM.length; i++) {
+    const [t0, w0] = IDEAL_CUM[i-1], [t1, w1] = IDEAL_CUM[i];
+    if (t <= t1) return w0 + (w1 - w0) * (t - t0) / (t1 - t0);
+  }
+  return IDEAL_TOTAL;
+}
+
+// === Helpers ===
+function log(msg, isError) {
+  logEl.textContent = msg || "";
+  logEl.classList.toggle("error", !!isError);
+}
+
+function setStatus(text, cls) {
+  stTextEl.textContent = text;
+  statusEl.className = "status" + (cls ? " " + cls : "");
+}
+
+// === Packet parse ===
+// 20B: AC 40 SS 00 W1 W2 W3 00..00 A6 CC
+function parsePacket(buf) {
+  if (buf.byteLength !== 20) return null;
+  const v = new DataView(buf);
+  if (v.getUint8(0) !== 0xAC) return null;
+  const stable = v.getUint8(2) === 0x01;
+  const raw = (v.getUint8(4) << 16) | (v.getUint8(5) << 8) | v.getUint8(6);
+  return { weightG: raw / 1000, raw, stable };
+}
+
+// === Unit conversion ===
+const UNIT = {
+  g:  { label: "g",  factor: 1,             precision: 1 },
+  oz: { label: "oz", factor: 1 / 28.349523, precision: 2 },
+  ml: { label: "ml", factor: 1,             precision: 1 }, // 水換算
+};
+
+function formatWeight(grams) {
+  const u = UNIT[currentUnit];
+  const v = grams * u.factor;
+  const clean = Object.is(v, -0) ? 0 : v;
+  // 表示記号は別出ししてレイアウトを安定化
+  const isNeg = clean < 0;
+  return { sign: isNeg ? "−" : "", body: Math.abs(clean).toFixed(u.precision) };
+}
+
+// === Render ===
+function render() {
+  const displayed = lastRawWeightG - tareOffsetG;
+  const f = formatWeight(displayed);
+  weightEl.textContent = f.body;
+  signEl.textContent = f.sign;
+  unitEl.textContent = UNIT[currentUnit].label;
+
+  heroEl.classList.toggle("is-stable", lastStable && bleDevice !== null);
+
+  if (bleDevice) {
+    setStatus(lastStable ? "STABLE" : "MEASURING", lastStable ? "stable" : "measuring");
+    metaEl.textContent =
+      `raw ${lastRawWeightG.toFixed(1)} g` +
+      (Math.abs(tareOffsetG) > 0.001 ? `   ·   tare −${tareOffsetG.toFixed(1)} g` : "");
+  } else {
+    metaEl.textContent = "";
+  }
+
+  // Tare banner
+  if (Math.abs(tareOffsetG) > 0.001) {
+    tareBanner.textContent = `Tare 適用中  −${tareOffsetG.toFixed(1)} g`;
+    tareBanner.classList.add("active");
+  } else {
+    tareBanner.classList.remove("active");
+  }
+
+  updateOled(displayed);
+}
+
+// === OLED (small mock inside chassis) ===
+function updateOled(displayed) {
+  // 経過秒数 → MM:SS
+  let tSec = 0;
+  if (recording) {
+    tSec = (Date.now() - recordStartMs) / 1000;
+  } else if (samples.length > 0) {
+    tSec = samples[samples.length - 1].t;
+  }
+  const mm = Math.floor(tSec / 60);
+  const ss = Math.floor(tSec % 60);
+  oledTimeEl.textContent = `${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
+
+  // 重量 (整数)
+  const w = isFinite(displayed) ? displayed : 0;
+  oledWeightEl.textContent = (w >= 0 ? Math.round(w) : "−" + Math.round(-w)).toString();
+
+  // ガイダンス矢印 (理想累積との差分)
+  oledArrowEl.classList.remove("up", "down", "ok");
+  if (!recording || tSec >= 180) {
+    oledArrowEl.textContent = recording ? "✓" : "·";
+    if (recording) oledArrowEl.classList.add("ok");
+  } else {
+    const target = idealCumWeightAt(tSec);
+    const diff = w - target;
+    if (diff < -15)      { oledArrowEl.textContent = "↗"; oledArrowEl.classList.add("up"); }
+    else if (diff < -5)  { oledArrowEl.textContent = "↑"; oledArrowEl.classList.add("up"); }
+    else if (diff > 15)  { oledArrowEl.textContent = "↓"; oledArrowEl.classList.add("down"); }
+    else if (diff > 5)   { oledArrowEl.textContent = "↘"; oledArrowEl.classList.add("down"); }
+    else                 { oledArrowEl.textContent = "·"; oledArrowEl.classList.add("ok"); }
+  }
+
+  drawOledTrace();
+}
+
+// 小さなフロー軌跡をOLED左側に描画 (50x44 ピクセル)
+function drawOledTrace() {
+  const W = 50, H = 44;
+  const ctx = oledTraceCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  if (samples.length < 2) return;
+
+  // 流速系列を取得 (flowS)。180秒スパンで描画
+  const tMax = 180;
+  const yMax = 5.0;
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  let started = false;
+  for (const s of samples) {
+    if (s.t > tMax) break;
+    const x = (s.t / tMax) * W;
+    const y = H - (Math.max(0, Math.min(yMax, s.flowS)) / yMax) * H;
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// === History ===
+function maybeRecordStable() {
+  // 安定状態が一定以上続き、かつ前回記録と十分違うなら履歴に追加
+  if (!lastStable || !bleDevice) {
+    stableSince = null;
+    return;
+  }
+  const displayed = lastRawWeightG - tareOffsetG;
+  if (Math.abs(displayed) < 0.5) return;  // ほぼゼロは記録しない
+
+  if (stableSince === null) stableSince = Date.now();
+  if (Date.now() - stableSince < 800) return;  // 0.8秒以上安定してから
+
+  if (lastStableLogged !== null && Math.abs(displayed - lastStableLogged) < 0.5) return;
+
+  history.unshift({ grams: displayed, time: new Date() });
+  if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
+  lastStableLogged = displayed;
+  renderHistory();
+}
+
+function renderHistory() {
+  histEl.innerHTML = "";
+  if (history.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "安定した計測値はここに記録されます";
+    histEl.appendChild(empty);
+    return;
+  }
+  for (const h of history) {
+    const f = formatWeight(h.grams);
+    const time = h.time.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.innerHTML = `<span class="chip-time">${time}</span>${f.sign}${f.body} ${UNIT[currentUnit].label}`;
+    histEl.appendChild(chip);
+  }
+}
+
+// === Notification handler ===
+function onNotify(event) {
+  const buf = event.target.value.buffer;
+  const parsed = parsePacket(buf);
+  if (!parsed) return;
+  const wasStable = lastStable;
+  lastRawWeightG = parsed.weightG;
+  lastStable = parsed.stable;
+  if (!wasStable && lastStable) stableSince = Date.now();
+  if (!lastStable) stableSince = null;
+  render();
+  maybeRecordStable();
+  recordSample();
+}
+
+// === Connect / Disconnect ===
+async function connect() {
+  if (!navigator.bluetooth) {
+    log("このブラウザは Web Bluetooth に対応していません (Chrome / Edge を使用してください)", true);
+    return;
+  }
+  try {
+    log("デバイス選択中...");
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: TARGET_NAME }],
+      optionalServices: [SERVICE_UUID],
+    });
+    log(`接続中: ${device.name}`);
+    setStatus("CONNECTING", "measuring connected");
+
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    const ch = await service.getCharacteristic(NOTIFY_UUID);
+    await ch.startNotifications();
+    ch.addEventListener("characteristicvaluechanged", onNotify);
+
+    bleDevice = device; bleServer = server; notifyChar = ch;
+
+    setStatus("CONNECTED", "connected");
+    document.body.classList.remove("disconnected");
+    connectBtn.classList.add("is-active");
+    tareBtn.disabled = false;
+    zeroBtn.disabled = false;
+    recordBtn.disabled = false;
+    log("");
+  } catch (e) {
+    log(`接続失敗: ${e.message}`, true);
+    setStatus("DISCONNECTED");
+  }
+}
+
+function disconnect() {
+  if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+  else onDisconnected();
+}
+
+function onDisconnected() {
+  bleDevice = null; bleServer = null; notifyChar = null;
+  lastRawWeightG = 0; lastStable = false; tareOffsetG = 0; stableSince = null;
+  weightEl.textContent = "---";
+  signEl.textContent = "";
+  heroEl.classList.remove("is-stable");
+  document.body.classList.add("disconnected");
+  setStatus("DISCONNECTED");
+  connectBtn.classList.remove("is-active");
+  tareBtn.disabled = true;
+  zeroBtn.disabled = true;
+  recordBtn.disabled = true;
+  if (recording) stopRecord();
+  render();
+  log("切断しました");
+}
+
+// === Tare ===
+function applyTare() {
+  tareOffsetG = lastRawWeightG;
+  render();
+}
+function clearTare() {
+  tareOffsetG = 0;
+  render();
+}
+
+// === Unit ===
+function setUnit(unit) {
+  currentUnit = unit;
+  document.querySelectorAll(".segmented button").forEach(b => {
+    b.classList.toggle("active", b.dataset.unit === unit);
+  });
+  render();
+  renderHistory();
+}
+
+// === Wire ===
+connectBtn.addEventListener("click", () => {
+  if (bleDevice && bleDevice.gatt.connected) disconnect();
+  else connect();
+});
+tareBtn.addEventListener("click", applyTare);
+zeroBtn.addEventListener("click", clearTare);
+document.querySelectorAll("#unitSegment button").forEach(b => {
+  b.addEventListener("click", () => setUnit(b.dataset.unit));
+});
+
+// === Graph ===
+const RECORD_MAX_S  = 300;       // 自動停止 (秒)
+const X_MIN_S       = 180;       // X軸の初期範囲 (秒) — 1〜3分中央値
+const X_STEP        = 30;        // X軸グリッド間隔 (秒)
+const WEIGHT_Y_MIN  = 400;       // 重量Y軸の初期最大 (g) — 通常300, 自動拡張
+// 調整パラメータ (UIから変更可)
+let FLOW_WINDOW_S = 3.0;         // 流速計算の移動窓 (秒) — 線形回帰
+let WEIGHT_EMA_A  = 0.07;        // 重量EMA係数 — 小さいほど滑らか
+let FLOW_EMA_A    = 0.10;        // 流速EMA係数
+// 理想流速プロファイル (画像から)
+const IDEAL_FLOW = [
+  [0,0],[20,0.8],[45,2.0],[60,3.2],[75,3.8],[90,4.0],
+  [105,3.8],[120,3.0],[150,1.8],[170,0.5],[180,0]
+];
+
+let recording = false;
+let recordStartMs = 0;
+let samples = [];                // { t, w(生), wS(平滑), flow, flowS }
+let graphAxis = "flow";          // "flow" | "weight"
+
+const graphCanvas = $("graph");
+const graphCtx = graphCanvas.getContext("2d");
+const graphTimeEl = $("graphTime");
+const graphFlowEl = $("graphFlow");
+const recordBtn = $("recordBtn");
+const resetBtn = $("resetBtn");
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = graphCanvas.getBoundingClientRect();
+  graphCanvas.width  = Math.max(1, Math.round(rect.width  * dpr));
+  graphCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+  graphCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// 平滑済み重量列に対して、窓内の最小二乗回帰で傾き(g/s)を求める
+function flowSlopeAt(idx) {
+  if (idx < 1) return 0;
+  const tNow = samples[idx].t;
+  let i0 = idx;
+  while (i0 > 0 && tNow - samples[i0 - 1].t < FLOW_WINDOW_S) i0--;
+  const n = idx - i0 + 1;
+  if (n < 2) return 0;
+  let sT = 0, sW = 0, sTT = 0, sTW = 0;
+  for (let i = i0; i <= idx; i++) {
+    const t = samples[i].t, w = samples[i].wS;
+    sT += t; sW += w; sTT += t * t; sTW += t * w;
+  }
+  const denom = n * sTT - sT * sT;
+  if (Math.abs(denom) < 1e-9) return 0;
+  return (n * sTW - sT * sW) / denom;
+}
+
+function recordSample() {
+  if (!recording) return;
+  const t = (Date.now() - recordStartMs) / 1000;
+  if (t > RECORD_MAX_S) { stopRecord(); return; }
+  const w = lastRawWeightG - tareOffsetG;
+  const prev = samples[samples.length - 1];
+  const wS = prev ? WEIGHT_EMA_A * w + (1 - WEIGHT_EMA_A) * prev.wS : w;
+
+  samples.push({ t, w, wS, flow: 0, flowS: 0 });
+  const idx = samples.length - 1;
+  const flow = flowSlopeAt(idx);
+  const flowS = prev ? FLOW_EMA_A * flow + (1 - FLOW_EMA_A) * prev.flowS : flow;
+  samples[idx].flow = flow;
+  samples[idx].flowS = flowS;
+
+  graphTimeEl.textContent = t.toFixed(1) + "s";
+  graphFlowEl.textContent = flowS.toFixed(2) + " g/s";
+}
+
+function startRecord() {
+  // 計測開始時に自動Tare: カップ込みでゼロ → 抽出量を記録
+  tareOffsetG = lastRawWeightG;
+  samples = [];
+  recordStartMs = Date.now();
+  recording = true;
+  recordBtn.classList.add("is-rec");
+  resetBtn.disabled = false;
+  render();
+}
+
+function stopRecord() {
+  recording = false;
+  recordBtn.classList.remove("is-rec");
+  render();
+}
+
+function resetRecord() {
+  recording = false;
+  samples = [];
+  recordBtn.classList.remove("is-rec");
+  resetBtn.disabled = true;
+  graphTimeEl.textContent = "0.0s";
+  graphFlowEl.textContent = "0.0 g/s";
+  render();
+}
+
+function setGraphAxis(axis) {
+  graphAxis = axis;
+  document.querySelectorAll("#axisSegment button").forEach(b => {
+    b.classList.toggle("active", b.dataset.axis === axis);
+  });
+}
+
+function drawGraph() {
+  const rect = graphCanvas.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  if (W < 10 || H < 10) return;
+  const padL = 36, padR = 14, padT = 10, padB = 22;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  const styles = getComputedStyle(document.documentElement);
+  const cBorder = styles.getPropertyValue("--border").trim();
+  const cMuted  = styles.getPropertyValue("--text-muted").trim();
+  const cFaint  = styles.getPropertyValue("--text-faint").trim();
+  const cAccent = styles.getPropertyValue("--stable").trim();
+
+  graphCtx.clearRect(0, 0, W, H);
+
+  // 系列 (平滑値を使う)
+  const series = [];
+  if (graphAxis === "flow") {
+    for (const s of samples) series.push({ x: s.t, y: s.flowS });
+  } else {
+    for (const s of samples) series.push({ x: s.t, y: s.wS });
+  }
+
+  // X 範囲
+  const tLast = samples.length ? samples[samples.length - 1].t : 0;
+  const tMax  = Math.max(X_MIN_S, Math.ceil(tLast / X_STEP) * X_STEP);
+
+  // Y 範囲
+  let yMax;
+  if (graphAxis === "flow") {
+    yMax = 5.0;
+    for (const p of series) if (p.y > yMax) yMax = Math.ceil(p.y + 0.5);
+  } else {
+    yMax = WEIGHT_Y_MIN;
+    let maxW = 0;
+    for (const p of series) if (p.y > maxW) maxW = p.y;
+    if (maxW > yMax) yMax = Math.ceil(maxW / 100) * 100;
+  }
+
+  const x2px = t => padL + (t / tMax) * plotW;
+  const y2py = v => padT + plotH - (v / yMax) * plotH;
+
+  // グリッド
+  graphCtx.font = "10px 'SF Mono', Menlo, monospace";
+  graphCtx.fillStyle = cMuted;
+  graphCtx.strokeStyle = cBorder;
+  graphCtx.lineWidth = 1;
+  graphCtx.setLineDash([2, 4]);
+
+  graphCtx.textAlign = "center";
+  graphCtx.textBaseline = "top";
+  for (let t = 0; t <= tMax; t += X_STEP) {
+    const x = x2px(t);
+    graphCtx.beginPath();
+    graphCtx.moveTo(x, padT);
+    graphCtx.lineTo(x, padT + plotH);
+    graphCtx.stroke();
+    graphCtx.fillText(t + "s", x, padT + plotH + 6);
+  }
+
+  graphCtx.textAlign = "right";
+  graphCtx.textBaseline = "middle";
+  const yStep = graphAxis === "flow" ? 1.0 : 100;
+  for (let y = 0; y <= yMax + 1e-6; y += yStep) {
+    const py = y2py(y);
+    graphCtx.beginPath();
+    graphCtx.moveTo(padL, py);
+    graphCtx.lineTo(padL + plotW, py);
+    graphCtx.stroke();
+    const label = graphAxis === "flow" ? y.toFixed(1) : String(Math.round(y));
+    graphCtx.fillText(label, padL - 5, py);
+  }
+  graphCtx.setLineDash([]);
+
+  // 理想プロファイル (流速モードのみ)
+  if (graphAxis === "flow") {
+    graphCtx.strokeStyle = cFaint;
+    graphCtx.lineWidth = 1.5;
+    graphCtx.setLineDash([4, 4]);
+    graphCtx.beginPath();
+    let started = false;
+    for (const [t, v] of IDEAL_FLOW) {
+      if (t > tMax) break;
+      const x = x2px(t), y = y2py(v);
+      if (!started) { graphCtx.moveTo(x, y); started = true; }
+      else graphCtx.lineTo(x, y);
+    }
+    graphCtx.stroke();
+    graphCtx.setLineDash([]);
+  }
+
+  // 実測プロット
+  if (series.length > 1) {
+    // 塗り
+    graphCtx.fillStyle = cAccent;
+    graphCtx.globalAlpha = 0.14;
+    graphCtx.beginPath();
+    graphCtx.moveTo(x2px(series[0].x), y2py(0));
+    for (const p of series) graphCtx.lineTo(x2px(p.x), y2py(Math.max(0, p.y)));
+    graphCtx.lineTo(x2px(series[series.length - 1].x), y2py(0));
+    graphCtx.closePath();
+    graphCtx.fill();
+    graphCtx.globalAlpha = 1;
+
+    // ライン
+    graphCtx.strokeStyle = cAccent;
+    graphCtx.lineWidth = 2;
+    graphCtx.lineJoin = "round";
+    graphCtx.beginPath();
+    for (let i = 0; i < series.length; i++) {
+      const x = x2px(series[i].x), y = y2py(Math.max(0, series[i].y));
+      if (i === 0) graphCtx.moveTo(x, y);
+      else graphCtx.lineTo(x, y);
+    }
+    graphCtx.stroke();
+
+    // 現在点
+    const last = series[series.length - 1];
+    graphCtx.fillStyle = cAccent;
+    graphCtx.beginPath();
+    graphCtx.arc(x2px(last.x), y2py(Math.max(0, last.y)), 3, 0, Math.PI * 2);
+    graphCtx.fill();
+  }
+}
+
+function tickGraph() {
+  drawGraph();
+  requestAnimationFrame(tickGraph);
+}
+
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+requestAnimationFrame(tickGraph);
+
+recordBtn.addEventListener("click", () => {
+  if (recording) stopRecord();
+  else startRecord();
+});
+resetBtn.addEventListener("click", resetRecord);
+document.querySelectorAll("#axisSegment button").forEach(b => {
+  b.addEventListener("click", () => setGraphAxis(b.dataset.axis));
+});
+
+// === Tuning panel ===
+function recomputeSamples() {
+  // wS を先に全部更新 → flow/flowS を更新 (flow は wS を使うので2パス)
+  for (let i = 0; i < samples.length; i++) {
+    const w = samples[i].w;
+    samples[i].wS = i > 0
+      ? WEIGHT_EMA_A * w + (1 - WEIGHT_EMA_A) * samples[i - 1].wS
+      : w;
+  }
+  for (let i = 0; i < samples.length; i++) {
+    const flow = flowSlopeAt(i);
+    samples[i].flow = flow;
+    samples[i].flowS = i > 0
+      ? FLOW_EMA_A * flow + (1 - FLOW_EMA_A) * samples[i - 1].flowS
+      : flow;
+  }
+  if (samples.length) {
+    graphFlowEl.textContent = samples[samples.length - 1].flowS.toFixed(2) + " g/s";
+  }
+}
+
+function loadTune() {
+  try {
+    const t = JSON.parse(localStorage.getItem("scaleTune") || "{}");
+    if (typeof t.wEma === "number") WEIGHT_EMA_A = t.wEma;
+    if (typeof t.fEma === "number") FLOW_EMA_A = t.fEma;
+    if (typeof t.fWin === "number") FLOW_WINDOW_S = t.fWin;
+  } catch (_) {}
+}
+function saveTune() {
+  localStorage.setItem("scaleTune", JSON.stringify({
+    wEma: WEIGHT_EMA_A, fEma: FLOW_EMA_A, fWin: FLOW_WINDOW_S,
+  }));
+}
+
+const tuneWE = $("tuneWE"), tuneWEVal = $("tuneWEVal");
+const tuneFE = $("tuneFE"), tuneFEVal = $("tuneFEVal");
+const tuneFW = $("tuneFW"), tuneFWVal = $("tuneFWVal");
+
+function syncTuneUI() {
+  tuneWE.value = WEIGHT_EMA_A;
+  tuneFE.value = FLOW_EMA_A;
+  tuneFW.value = FLOW_WINDOW_S;
+  tuneWEVal.textContent = (+WEIGHT_EMA_A).toFixed(2);
+  tuneFEVal.textContent = (+FLOW_EMA_A).toFixed(2);
+  tuneFWVal.textContent = (+FLOW_WINDOW_S).toFixed(1) + "s";
+}
+
+loadTune();
+syncTuneUI();
+recomputeSamples();
+
+tuneWE.addEventListener("input", () => {
+  WEIGHT_EMA_A = parseFloat(tuneWE.value);
+  tuneWEVal.textContent = WEIGHT_EMA_A.toFixed(2);
+  recomputeSamples(); saveTune();
+});
+tuneFE.addEventListener("input", () => {
+  FLOW_EMA_A = parseFloat(tuneFE.value);
+  tuneFEVal.textContent = FLOW_EMA_A.toFixed(2);
+  recomputeSamples(); saveTune();
+});
+tuneFW.addEventListener("input", () => {
+  FLOW_WINDOW_S = parseFloat(tuneFW.value);
+  tuneFWVal.textContent = FLOW_WINDOW_S.toFixed(1) + "s";
+  recomputeSamples(); saveTune();
+});
+
+// 初期描画
+render();
+renderHistory();
+</script>
+</body>
+</html>

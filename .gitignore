@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Bluetooth captures (raw protocol logs)
+bluetooth_capture/
+*.pklg
+
+# Apple system config
+*.mobileconfig
+
+# Large screen captures
+screencapture-*.png
+
+# Local Claude settings
+.claude/
