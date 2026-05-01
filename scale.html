@@ -690,7 +690,7 @@
 
   <!-- Topbar: brand + connection status -->
   <header class="topbar">
-    <div class="brand">N V S C L<span class="cursor">_</span></div>
+    <div class="brand" id="brand" aria-label="NVSCL"><span class="cursor">_</span></div>
     <div class="status" id="status">
       <span class="dot"></span>
       <span id="statusText">DISCONNECTED</span>
@@ -1471,6 +1471,44 @@ tuneFW.addEventListener("input", () => {
 // 初期描画
 render();
 renderHistory();
+
+// === Logo typing animation: NERVOUS.SCALE → N → NVSCL_ ===
+(function () {
+  const brand = document.getElementById("brand");
+  if (!brand) return;
+
+  const FULL  = "NERVOUS.SCALE";
+  const FINAL = "NVSCL";
+  const TYPE_MS  = 100;
+  const ERASE_MS = 60;
+  const HOLD_FULL  = 700;
+  const HOLD_EMPTY = 250;
+  const START_DELAY = 200;
+
+  const steps = [];
+  for (let i = 1; i <= FULL.length; i++) steps.push({ t: FULL.slice(0, i), w: TYPE_MS });
+  steps[steps.length - 1].w = HOLD_FULL;
+  for (let i = FULL.length - 1; i >= 1; i--) steps.push({ t: FULL.slice(0, i), w: ERASE_MS });
+  steps[steps.length - 1].w = HOLD_EMPTY;
+  for (let i = 2; i <= FINAL.length; i++) steps.push({ t: FINAL.slice(0, i), w: TYPE_MS });
+
+  function paint(text) {
+    brand.textContent = text.split("").join(" ");
+  }
+
+  let i = 0;
+  function tick() {
+    if (i >= steps.length) {
+      brand.innerHTML = FINAL.split("").join(" ") + '<span class="cursor">_</span>';
+      return;
+    }
+    const s = steps[i++];
+    paint(s.t);
+    setTimeout(tick, s.w);
+  }
+  paint("");
+  setTimeout(tick, START_DELAY);
+})();
 </script>
 </body>
 </html>

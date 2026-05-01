@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>NVSCL_ OLED Demo</title>
+<title>NVSCL_ OLED</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbit&display=swap" rel="stylesheet">
@@ -58,9 +58,15 @@
     font-weight: 400;
     font-size: clamp(13px, 2.5vmin, 20px);
     letter-spacing: 0.5em;
-    padding-left: 0.5em; /* compensate trailing letter-spacing */
+    padding-left: 0.5em;
     color: #fff;
   }
+  .brand .cursor {
+    display: inline-block;
+    margin-left: 2px;
+    animation: blink-cursor 1.1s steps(1) infinite;
+  }
+  @keyframes blink-cursor { 50% { opacity: 0; } }
 
   /* ==================== Buttons ==================== */
   .btn-pad {
@@ -82,11 +88,12 @@
     justify-content: center;
     gap: 0.25em;
     cursor: pointer;
-    transition: background 0.15s, transform 0.08s;
+    transition: background 0.15s, transform 0.08s, box-shadow 0.15s;
   }
   .btn-pad:hover  { background: #2a2a2a; }
   .btn-pad:active { background: #181818; transform: scale(0.97); }
-  .btn-pad.is-on  { background: #2f2f2f; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+  .btn-pad.is-on  { background: #2f2f2f; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45); }
+  .btn-pad.is-busy { opacity: 0.6; }
 
   .btn-l { grid-column: 1; grid-row: 2; }
   .btn-r { grid-column: 3; grid-row: 2; }
@@ -127,9 +134,23 @@
   }
   .numbers .time   { text-align: left;  min-width: 5ch; }
   .numbers .weight { text-align: right; min-width: 3ch; }
+  .numbers.is-disconnected .time,
+  .numbers.is-disconnected .weight { color: #444; }
 
-  /* When iPhone is portrait: rotate the whole stage 90° to mimic the Figma vertical mount.
-     ON/OFF TARE ends up at the top, START/STOP at the bottom. */
+  /* Status text (small, just under brand) */
+  .status {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: clamp(9px, 1.5vmin, 11px);
+    letter-spacing: 0.2em;
+    color: #777;
+    margin-top: 4px;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+
   @media (orientation: portrait) {
     .stage {
       transform: rotate(90deg);
@@ -141,7 +162,7 @@
 </head>
 <body>
   <div class="stage">
-    <div class="brand">N V S C L _</div>
+    <div class="brand" id="brand" aria-label="NVSCL"><span class="cursor">_</span></div>
 
     <button class="btn-pad btn-l" id="btnTare" aria-label="ON/OFF / TARE">
       <span>ON/OFF</span>
@@ -157,184 +178,301 @@
       <span>STOP</span>
     </button>
 
-    <div class="numbers">
+    <div class="numbers is-disconnected" id="numbers">
       <div class="time"   id="time">00.00</div>
       <div class="weight" id="weight">0</div>
     </div>
   </div>
 
 <script>
-  // ==================== OLED bar data (from Figma 5:1655, native 128x64 px) ====================
-  // Top tick markers: short dashes left → progressively longer lines → long bar right.
-  const TOP_MARKS = [
-    { x: 1,  w: 2  },
-    { x: 5,  w: 2  },
-    { x: 9,  w: 2  },
-    { x: 13, w: 2  },
-    { x: 17, w: 2  },
-    { x: 23, w: 10 },
-    { x: 42, w: 26 },
-    { x: 83, w: 45 },
-  ];
+  // ==================== BLE constants (KT630B / MY_SCALE) ====================
+  const SERVICE_UUID = "0000ffb0-0000-1000-8000-00805f9b34fb";
+  const NOTIFY_UUID  = "0000ffb2-0000-1000-8000-00805f9b34fb";
+  const TARGET_NAME  = "MY_SCALE";
 
-  // Cumulative-weight bars. Each entry = bar height in OLED pixels (1px wide, 3px stride from x=0).
-  // X axis: 2 seconds per bar. Y axis: total weight [g], scaled so the tallest bar maps to FINAL_WEIGHT_G.
-  const BAR_HEIGHTS = [
-    6, 13, 22, 30, 30, 30, 30, 30, 30, 30, 30, 30,
-    34, 36, 39, 41, 43, 44, 46, 46, 47, 48, 49, 50,
-    51, 53, 55, 56, 57, 59, 59, 61, 61, 61, 61, 61,
-    61, 61, 61, 61, 61, 61, 61
-  ];
+  // ==================== OLED chart constants ====================
+  const OLED_W = 128;
+  const OLED_H = 64;
   const BAR_W = 1;
-  const BAR_STRIDE = 3;
-  const BAR_X0 = 0;
+  const BAR_STRIDE = 3;                              // px between bar starts
+  const MAX_BARS = Math.floor(OLED_W / BAR_STRIDE);  // ~42 bars visible
+  const SAMPLE_INTERVAL_MS = 1000;                   // 1 discrete sample / sec
+  const Y_FLOOR_G = 50;                              // min full-scale (g)
+  const TOP_PADDING_PX = 4;
+  const FILL = '#d9d9d9';
 
-  // Demo timing & scale
-  const SEC_PER_BAR = 2;
-  const TOTAL_BARS = BAR_HEIGHTS.length;                // 43
-  const TOTAL_SEC = TOTAL_BARS * SEC_PER_BAR;           // 86s = 01:26
-  const FINAL_WEIGHT_G = 287;
-  const MAX_BAR_PX = Math.max(...BAR_HEIGHTS);          // 61
-  const ANIM_DURATION_MS = 8000;                        // 8s compressed playback
+  // ==================== State ====================
+  let bleDevice = null;
+  let notifyChar = null;
+  let connected = false;
 
-  // ==================== Canvas setup ====================
+  let lastRawWeightG = 0;
+  let lastStable = false;
+  let tareOffsetG = 0;
+
+  let recording = false;
+  let recordStartMs = 0;
+  let lastSampleSec = -1;
+  /** @type {Array<{t:number, w:number}>} */
+  const samples = [];
+
+  // ==================== DOM ====================
   const canvas = document.getElementById('oled');
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
 
+  const timeEl    = document.getElementById('time');
+  const weightEl  = document.getElementById('weight');
+  const numbersEl = document.getElementById('numbers');
+  const btnStart  = document.getElementById('btnStart');
+  const btnTare   = document.getElementById('btnTare');
+
+  // ==================== Drawing ====================
   function clear() {
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillRect(0, 0, OLED_W, OLED_H);
   }
 
-  function drawTopMarks(progress) {
-    if (progress <= 0) return;
-    ctx.fillStyle = '#d9d9d9';
-    // Marks fade in across the first 25% of timeline.
-    const visible = Math.min(1, progress / 0.25);
-    const cutoff = Math.floor(TOP_MARKS.length * visible);
-    for (let i = 0; i < cutoff; i++) {
-      const m = TOP_MARKS[i];
-      ctx.fillRect(m.x, 0, m.w, 1);
-    }
-  }
+  function drawBars() {
+    if (samples.length === 0) return;
+    const visible = samples.length > MAX_BARS
+      ? samples.slice(samples.length - MAX_BARS)
+      : samples;
+    let maxW = Y_FLOOR_G;
+    for (const s of visible) if (s.w > maxW) maxW = s.w;
+    const usableH = OLED_H - TOP_PADDING_PX;
 
-  function drawBars(progress) {
-    if (progress <= 0) return;
-    ctx.fillStyle = '#d9d9d9';
-    const filled = progress * TOTAL_BARS;
-    for (let i = 0; i < TOTAL_BARS; i++) {
-      const reveal = Math.max(0, Math.min(1, filled - i));
-      if (reveal <= 0) continue;
-      const h = Math.round(BAR_HEIGHTS[i] * reveal);
+    ctx.fillStyle = FILL;
+    for (let i = 0; i < visible.length; i++) {
+      const w = Math.max(0, visible[i].w);
+      const h = Math.round((w / maxW) * usableH);
       if (h <= 0) continue;
-      const x = BAR_X0 + i * BAR_STRIDE;
-      ctx.fillRect(x, 64 - h, BAR_W, h);
+      const x = i * BAR_STRIDE;
+      ctx.fillRect(x, OLED_H - h, BAR_W, h);
     }
   }
 
-  function render(progress) {
-    clear();
-    drawTopMarks(progress);
-    drawBars(progress);
+  function drawIdleHint() {
+    // Single dim pixel-row baseline so the panel does not look dead.
+    ctx.fillStyle = '#1f1f1f';
+    ctx.fillRect(0, OLED_H - 1, OLED_W, 1);
   }
 
-  // ==================== Readout ====================
-  const timeEl   = document.getElementById('time');
-  const weightEl = document.getElementById('weight');
+  function render() {
+    clear();
+    if (samples.length === 0) drawIdleHint();
+    else drawBars();
+  }
 
+  // ==================== Numbers ====================
   function fmtTime(sec) {
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return String(m).padStart(2, '0') + '.' + String(s).padStart(2, '0');
   }
 
-  function currentBarHeightAt(progress) {
-    // Interpolate between adjacent bar heights at the continuous bar index.
-    const idxF = progress * TOTAL_BARS;
-    if (idxF <= 0) return 0;
-    if (idxF >= TOTAL_BARS) return BAR_HEIGHTS[TOTAL_BARS - 1];
-    const i = Math.floor(idxF);
-    const frac = idxF - i;
-    const h0 = i === 0 ? 0 : BAR_HEIGHTS[i - 1];
-    const h1 = BAR_HEIGHTS[i];
-    return h0 + (h1 - h0) * frac;
+  function displayedWeight() {
+    return lastRawWeightG - tareOffsetG;
   }
 
-  function updateReadout(progress) {
-    const sec = progress * TOTAL_SEC;
-    const h = currentBarHeightAt(progress);
-    const weight = (h / MAX_BAR_PX) * FINAL_WEIGHT_G;
-    timeEl.textContent = fmtTime(sec);
-    weightEl.textContent = String(Math.round(weight));
-  }
-
-  // ==================== State machine + animation loop ====================
-  // 'idle' (progress=0)  →  START → 'running'  →  STOP → 'paused'  →  START → 'running'
-  // 'running' reaches end → 'finished'  →  START → restart from 0
-  // TARE at any time → 'idle' (progress reset)
-  let phase = 'idle';
-  let progress = 0;
-  let lastTs = null;
-  let rafId = null;
-
-  function tick(ts) {
-    if (phase !== 'running') { lastTs = null; rafId = null; return; }
-    if (lastTs === null) lastTs = ts;
-    const dt = ts - lastTs;
-    lastTs = ts;
-
-    progress += dt / ANIM_DURATION_MS;
-    if (progress >= 1) {
-      progress = 1;
-      phase = 'finished';
-      btnStart.classList.remove('is-on');
+  function updateNumbers() {
+    let tSec = 0;
+    if (recording) {
+      tSec = (Date.now() - recordStartMs) / 1000;
+    } else if (samples.length > 0) {
+      tSec = samples[samples.length - 1].t;
     }
-    render(progress);
-    updateReadout(progress);
+    timeEl.textContent = fmtTime(tSec);
 
-    if (phase === 'running') {
-      rafId = requestAnimationFrame(tick);
-    } else {
-      rafId = null;
+    const w = displayedWeight();
+    const rounded = Math.round(w);
+    weightEl.textContent = (rounded === 0 ? '0' : (rounded > 0 ? String(rounded) : '−' + Math.abs(rounded)));
+  }
+
+  // ==================== BLE ====================
+  // Packet: 20B  AC 40 SS 00 W1 W2 W3 00..00 A6 CC
+  function parsePacket(buf) {
+    if (buf.byteLength !== 20) return null;
+    const v = new DataView(buf);
+    if (v.getUint8(0) !== 0xAC) return null;
+    const stable = v.getUint8(2) === 0x01;
+    const raw = (v.getUint8(4) << 16) | (v.getUint8(5) << 8) | v.getUint8(6);
+    return { weightG: raw / 1000, stable };
+  }
+
+  function onNotify(e) {
+    const parsed = parsePacket(e.target.value.buffer);
+    if (!parsed) return;
+    lastRawWeightG = parsed.weightG;
+    lastStable = parsed.stable;
+    updateNumbers();
+  }
+
+  async function connect() {
+    if (!navigator.bluetooth) {
+      alert('Web Bluetooth に対応していません (Bluefy / Chrome / Edge を使用してください)');
+      return;
+    }
+    btnTare.classList.add('is-busy');
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: TARGET_NAME }],
+        optionalServices: [SERVICE_UUID],
+      });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const ch = await service.getCharacteristic(NOTIFY_UUID);
+      await ch.startNotifications();
+      ch.addEventListener('characteristicvaluechanged', onNotify);
+
+      bleDevice = device;
+      notifyChar = ch;
+      connected = true;
+      btnTare.classList.add('is-on');
+      numbersEl.classList.remove('is-disconnected');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      btnTare.classList.remove('is-busy');
     }
   }
 
-  function play() {
-    if (phase === 'finished') progress = 0;
-    phase = 'running';
-    lastTs = null;
-    btnStart.classList.add('is-on');
-    if (rafId === null) rafId = requestAnimationFrame(tick);
+  function disconnect() {
+    if (recording) stopRecording();
+    try {
+      if (notifyChar) notifyChar.removeEventListener('characteristicvaluechanged', onNotify);
+      if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+    } catch (e) { console.error(e); }
+    onDisconnected();
   }
 
-  function pause() {
-    phase = 'paused';
-    btnStart.classList.remove('is-on');
+  function onDisconnected() {
+    bleDevice = null;
+    notifyChar = null;
+    connected = false;
+    lastRawWeightG = 0;
+    lastStable = false;
+    btnTare.classList.remove('is-on');
+    numbersEl.classList.add('is-disconnected');
+    updateNumbers();
   }
 
+  // ==================== Tare ====================
   function tare() {
-    phase = 'idle';
-    progress = 0;
-    btnStart.classList.remove('is-on');
-    render(0);
-    updateReadout(0);
+    tareOffsetG = lastRawWeightG;
+    updateNumbers();
   }
 
-  // ==================== Button wiring ====================
-  const btnStart = document.getElementById('btnStart');
-  const btnTare  = document.getElementById('btnTare');
+  // ==================== Recording ====================
+  function startRecording() {
+    if (!connected) return;
+    samples.length = 0;
+    recordStartMs = Date.now();
+    lastSampleSec = -1;
+    recording = true;
+    btnStart.classList.add('is-on');
+  }
 
+  function stopRecording() {
+    recording = false;
+    btnStart.classList.remove('is-on');
+  }
+
+  function sampleTick() {
+    if (!recording) return;
+    const tSec = (Date.now() - recordStartMs) / 1000;
+    const slot = Math.floor(tSec);
+    if (slot !== lastSampleSec) {
+      lastSampleSec = slot;
+      samples.push({ t: slot, w: displayedWeight() });
+      render();
+    }
+    updateNumbers();
+  }
+  setInterval(sampleTick, 100);  // check 10x/s, but only commit a sample once per second
+
+  // ==================== Buttons ====================
+  // Left button: tap = connect (when off) or tare (when on). Long-press = disconnect.
+  let pressTimer = null;
+  let longPressed = false;
+  const LONG_PRESS_MS = 600;
+
+  function onTarePressStart(ev) {
+    ev.preventDefault();
+    longPressed = false;
+    if (!connected) return;
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      disconnect();
+    }, LONG_PRESS_MS);
+  }
+
+  function onTarePressEnd(ev) {
+    ev.preventDefault();
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    if (longPressed) return;
+    if (!connected) connect();
+    else tare();
+  }
+
+  function onTarePressCancel() {
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+  }
+
+  btnTare.addEventListener('pointerdown', onTarePressStart);
+  btnTare.addEventListener('pointerup',   onTarePressEnd);
+  btnTare.addEventListener('pointerleave', onTarePressCancel);
+  btnTare.addEventListener('pointercancel', onTarePressCancel);
+
+  // Right button: toggle recording.
   btnStart.addEventListener('click', () => {
-    if (phase === 'running') pause();
-    else                     play();
+    if (!connected) return;
+    if (recording) stopRecording();
+    else startRecording();
   });
 
-  btnTare.addEventListener('click', tare);
+  // ==================== Init ====================
+  render();
+  updateNumbers();
 
-  // Initial paint
-  render(0);
-  updateReadout(0);
+  // ==================== Logo typing animation ====================
+  (function () {
+    const brand = document.getElementById("brand");
+    if (!brand) return;
+
+    const FULL  = "NERVOUS.SCALE";
+    const FINAL = "NVSCL";
+    const TYPE_MS  = 100;
+    const ERASE_MS = 60;
+    const HOLD_FULL  = 700;
+    const HOLD_EMPTY = 250;
+    const START_DELAY = 200;
+
+    const steps = [];
+    for (let i = 1; i <= FULL.length; i++) steps.push({ t: FULL.slice(0, i), w: TYPE_MS });
+    steps[steps.length - 1].w = HOLD_FULL;
+    for (let i = FULL.length - 1; i >= 1; i--) steps.push({ t: FULL.slice(0, i), w: ERASE_MS });
+    steps[steps.length - 1].w = HOLD_EMPTY;
+    for (let i = 2; i <= FINAL.length; i++) steps.push({ t: FINAL.slice(0, i), w: TYPE_MS });
+
+    function paint(text) {
+      brand.textContent = text.split("").join(" ");
+    }
+
+    let i = 0;
+    function tick() {
+      if (i >= steps.length) {
+        brand.innerHTML = FINAL.split("").join(" ") + '<span class="cursor">_</span>';
+        return;
+      }
+      const s = steps[i++];
+      paint(s.t);
+      setTimeout(tick, s.w);
+    }
+    paint("");
+    setTimeout(tick, START_DELAY);
+  })();
 </script>
 </body>
 </html>
