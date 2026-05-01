@@ -39,9 +39,13 @@
   }
 
   /* ==================== Stage layout ==================== */
+  /* Figma reference (landscape canvas ~852x393):
+       OLED 320x160 (~38% w), buttons 120x120, numbers 45px Orbit, brand 24px Inter.
+     Sizes below are tuned so the layout matches those proportions on iPhone in portrait
+     (after the rotate(90deg) media query swaps vmin/vmax). */
   .stage {
-    --gap: clamp(14px, 3.5vmin, 36px);
-    --oled-w: clamp(260px, 58vmin, 540px);
+    --gap: clamp(18px, 5vmin, 56px);
+    --oled-w: clamp(200px, 42vmin, 380px);
     display: grid;
     grid-template-columns: auto var(--oled-w) auto;
     grid-template-rows: auto auto auto;
@@ -56,10 +60,11 @@
     grid-row: 1;
     font-family: "Inter", sans-serif;
     font-weight: 400;
-    font-size: clamp(13px, 2.5vmin, 20px);
-    letter-spacing: 0.5em;
+    font-size: clamp(13px, 3vmin, 24px);
+    letter-spacing: clamp(0.3em, 0.6vmin, 0.5em);
     padding-left: 0.5em;
     color: #fff;
+    white-space: nowrap;
   }
   .brand .cursor {
     display: inline-block;
@@ -117,6 +122,8 @@
   }
 
   /* ==================== Numbers (time + weight) below OLED ==================== */
+  /* Figma uses 45px Orbit on a 320px-wide OLED ≈ 14% ratio.
+     We scale the same ratio against the new (smaller) OLED width via clamp+vmin. */
   .numbers {
     grid-column: 2;
     grid-row: 3;
@@ -124,9 +131,10 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    padding: 0 clamp(4px, 1.5vmin, 18px);
+    padding: 0 clamp(2px, 0.8vmin, 8px);
+    margin-top: clamp(4px, 1vmin, 10px);
     font-family: "Orbit", "SF Mono", monospace;
-    font-size: clamp(24px, 7vmin, 45px);
+    font-size: clamp(32px, 10vmin, 56px);
     letter-spacing: 0.05em;
     color: #fff;
     line-height: 1;
@@ -155,7 +163,15 @@
     .stage {
       transform: rotate(90deg);
       transform-origin: center center;
-      --oled-w: clamp(260px, 58vmax, 540px);
+      --gap: clamp(18px, 5vmax, 56px);
+      --oled-w: clamp(200px, 42vmax, 380px);
+    }
+    .brand {
+      font-size: clamp(13px, 3vmax, 24px);
+      letter-spacing: clamp(0.3em, 0.6vmax, 0.5em);
+    }
+    .numbers {
+      font-size: clamp(32px, 10vmax, 56px);
     }
   }
 </style>

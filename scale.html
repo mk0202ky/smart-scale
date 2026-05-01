@@ -435,11 +435,12 @@
   }
   .brand {
     font-family: "SF Mono", "Menlo", monospace;
-    font-size: 14px;
+    font-size: clamp(10px, 3.4vw, 14px);
     font-weight: 400;
-    letter-spacing: 0.4em;
+    letter-spacing: clamp(0.2em, 0.7vw, 0.4em);
     color: var(--text);
     text-transform: uppercase;
+    white-space: nowrap;
   }
   .brand .cursor {
     display: inline-block;
