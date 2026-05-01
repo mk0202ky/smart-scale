@@ -9,7 +9,7 @@
 <title>NVSCL_ OLED Demo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbit&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbit&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -27,7 +27,7 @@
     user-select: none;
   }
   body {
-    font-family: -apple-system, "SF Pro Text", BlinkMacSystemFont, "Hiragino Sans", system-ui, sans-serif;
+    font-family: "Inter", -apple-system, "SF Pro Text", BlinkMacSystemFont, "Hiragino Sans", system-ui, sans-serif;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -38,36 +38,66 @@
       env(safe-area-inset-left);
   }
 
-  /* ==================== Stage ==================== */
+  /* ==================== Stage layout ==================== */
   .stage {
-    display: flex;
-    flex-direction: column;
+    --gap: clamp(14px, 3.5vmin, 36px);
+    --oled-w: clamp(260px, 58vmin, 540px);
+    display: grid;
+    grid-template-columns: auto var(--oled-w) auto;
+    grid-template-rows: auto auto auto;
+    column-gap: var(--gap);
+    row-gap: clamp(10px, 2.5vmin, 22px);
     align-items: center;
-    gap: clamp(14px, 4vmin, 36px);
-    width: min(96vw, 760px);
+    justify-items: center;
   }
 
   .brand {
-    font-size: clamp(13px, 2.6vmin, 20px);
+    grid-column: 2;
+    grid-row: 1;
+    font-family: "Inter", sans-serif;
     font-weight: 400;
+    font-size: clamp(13px, 2.5vmin, 20px);
     letter-spacing: 0.5em;
     padding-left: 0.5em; /* compensate trailing letter-spacing */
     color: #fff;
-    user-select: none;
   }
 
-  .display {
-    display: grid;
-    grid-template-columns: auto auto;
+  /* ==================== Buttons ==================== */
+  .btn-pad {
+    width: clamp(78px, 16vmin, 120px);
+    aspect-ratio: 1 / 1;
+    background: #222;
+    border: 0.5px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    color: #fff;
+    font-family: "Inter", "Helvetica Neue", "DIN Alternate", sans-serif;
+    font-size: clamp(12px, 2.2vmin, 20px);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: clamp(20px, 6vmin, 60px);
+    justify-content: center;
+    gap: 0.25em;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.08s;
   }
+  .btn-pad:hover  { background: #2a2a2a; }
+  .btn-pad:active { background: #181818; transform: scale(0.97); }
+  .btn-pad.is-on  { background: #2f2f2f; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+
+  .btn-l { grid-column: 1; grid-row: 2; }
+  .btn-r { grid-column: 3; grid-row: 2; }
 
   /* ==================== OLED panel ==================== */
   .oled {
-    width: clamp(240px, 56vmin, 520px);
+    grid-column: 2;
+    grid-row: 2;
+    width: 100%;
     aspect-ratio: 128 / 64;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1.25px solid rgba(255, 255, 255, 0.2);
     background: #000;
     position: relative;
   }
@@ -79,48 +109,32 @@
     image-rendering: crisp-edges;
   }
 
-  /* ==================== Readout (time + weight) ==================== */
-  .readout {
+  /* ==================== Numbers (time + weight) below OLED ==================== */
+  .numbers {
+    grid-column: 2;
+    grid-row: 3;
+    width: 100%;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: clamp(10px, 4vmin, 28px);
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 clamp(4px, 1.5vmin, 18px);
     font-family: "Orbit", "SF Mono", monospace;
+    font-size: clamp(24px, 7vmin, 45px);
+    letter-spacing: 0.05em;
     color: #fff;
     line-height: 1;
-  }
-  .readout .time,
-  .readout .weight {
-    font-size: clamp(28px, 8.5vmin, 56px);
-    letter-spacing: 0.05em;
     font-variant-numeric: tabular-nums;
-    text-align: right;
-    min-width: 4ch;
   }
+  .numbers .time   { text-align: left;  min-width: 5ch; }
+  .numbers .weight { text-align: right; min-width: 3ch; }
 
-  /* ==================== Footer hint ==================== */
-  .hint {
-    position: fixed;
-    bottom: calc(env(safe-area-inset-bottom) + 14px);
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: "SF Mono", "Menlo", monospace;
-    font-size: 10px;
-    letter-spacing: 0.24em;
-    color: rgba(255, 255, 255, 0.28);
-    text-transform: uppercase;
-    transition: opacity 0.4s;
-  }
-  .hint.fade { opacity: 0; }
-
-  /* When iPhone is portrait, rotate the whole stage to mimic the Figma vertical mount */
+  /* When iPhone is portrait: rotate the whole stage 90° to mimic the Figma vertical mount.
+     ON/OFF TARE ends up at the top, START/STOP at the bottom. */
   @media (orientation: portrait) {
-    body { align-items: center; justify-content: center; }
     .stage {
       transform: rotate(90deg);
       transform-origin: center center;
-      /* Swap width/height by sizing to viewport's short edge */
-      width: min(96vh, 760px);
+      --oled-w: clamp(260px, 58vmax, 540px);
     }
   }
 </style>
@@ -128,22 +142,30 @@
 <body>
   <div class="stage">
     <div class="brand">N V S C L _</div>
-    <div class="display">
-      <div class="oled">
-        <canvas id="oled" width="128" height="64"></canvas>
-      </div>
-      <div class="readout">
-        <div class="time"   id="time">00.00</div>
-        <div class="weight" id="weight">0</div>
-      </div>
+
+    <button class="btn-pad btn-l" id="btnTare" aria-label="ON/OFF / TARE">
+      <span>ON/OFF</span>
+      <span>TARE</span>
+    </button>
+
+    <div class="oled" aria-hidden="true">
+      <canvas id="oled" width="128" height="64"></canvas>
+    </div>
+
+    <button class="btn-pad btn-r" id="btnStart" aria-label="START / STOP">
+      <span>START</span>
+      <span>STOP</span>
+    </button>
+
+    <div class="numbers">
+      <div class="time"   id="time">00.00</div>
+      <div class="weight" id="weight">0</div>
     </div>
   </div>
-  <div class="hint" id="hint">TAP TO REPLAY</div>
 
 <script>
-  // ==================== OLED frame data (from Figma 5:1655) ====================
-  // Top markers: short dashes left → progressively longer lines → long bar right.
-  // Coordinates are in native 128x64 OLED pixel space.
+  // ==================== OLED bar data (from Figma 5:1655, native 128x64 px) ====================
+  // Top tick markers: short dashes left → progressively longer lines → long bar right.
   const TOP_MARKS = [
     { x: 1,  w: 2  },
     { x: 5,  w: 2  },
@@ -155,8 +177,8 @@
     { x: 83, w: 45 },
   ];
 
-  // Vertical bars representing the flow trace, growing left → right.
-  // Each entry: { h: heightInPx } — bottom-anchored, 1px wide, 3px stride from x=0.
+  // Cumulative-weight bars. Each entry = bar height in OLED pixels (1px wide, 3px stride from x=0).
+  // X axis: 2 seconds per bar. Y axis: total weight [g], scaled so the tallest bar maps to FINAL_WEIGHT_G.
   const BAR_HEIGHTS = [
     6, 13, 22, 30, 30, 30, 30, 30, 30, 30, 30, 30,
     34, 36, 39, 41, 43, 44, 46, 46, 47, 48, 49, 50,
@@ -167,13 +189,15 @@
   const BAR_STRIDE = 3;
   const BAR_X0 = 0;
 
-  // Final readout values (extraction snapshot at end of demo).
-  const FINAL_TIME_SEC = 114; // 01:54
+  // Demo timing & scale
+  const SEC_PER_BAR = 2;
+  const TOTAL_BARS = BAR_HEIGHTS.length;                // 43
+  const TOTAL_SEC = TOTAL_BARS * SEC_PER_BAR;           // 86s = 01:26
   const FINAL_WEIGHT_G = 287;
-  const ANIM_DURATION_MS = 5400; // demo speed
-  const HOLD_MS = 1600;          // hold final frame before allowing replay
+  const MAX_BAR_PX = Math.max(...BAR_HEIGHTS);          // 61
+  const ANIM_DURATION_MS = 8000;                        // 8s compressed playback
 
-  // ==================== Canvas setup (HiDPI-aware native pixel grid) ====================
+  // ==================== Canvas setup ====================
   const canvas = document.getElementById('oled');
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
@@ -184,10 +208,10 @@
   }
 
   function drawTopMarks(progress) {
-    // progress 0..1 — marks fade in across the first 25% of timeline.
-    const visible = Math.min(1, progress / 0.25);
-    if (visible <= 0) return;
+    if (progress <= 0) return;
     ctx.fillStyle = '#d9d9d9';
+    // Marks fade in across the first 25% of timeline.
+    const visible = Math.min(1, progress / 0.25);
     const cutoff = Math.floor(TOP_MARKS.length * visible);
     for (let i = 0; i < cutoff; i++) {
       const m = TOP_MARKS[i];
@@ -196,11 +220,10 @@
   }
 
   function drawBars(progress) {
-    // Bars fill in left → right over the full timeline.
+    if (progress <= 0) return;
     ctx.fillStyle = '#d9d9d9';
-    const totalBars = BAR_HEIGHTS.length;
-    const filled = progress * totalBars;
-    for (let i = 0; i < totalBars; i++) {
+    const filled = progress * TOTAL_BARS;
+    for (let i = 0; i < TOTAL_BARS; i++) {
       const reveal = Math.max(0, Math.min(1, filled - i));
       if (reveal <= 0) continue;
       const h = Math.round(BAR_HEIGHTS[i] * reveal);
@@ -216,8 +239,8 @@
     drawBars(progress);
   }
 
-  // ==================== Readout updates ====================
-  const timeEl = document.getElementById('time');
+  // ==================== Readout ====================
+  const timeEl   = document.getElementById('time');
   const weightEl = document.getElementById('weight');
 
   function fmtTime(sec) {
@@ -226,60 +249,92 @@
     return String(m).padStart(2, '0') + '.' + String(s).padStart(2, '0');
   }
 
-  function updateReadout(progress) {
-    // ease-out so the trailing seconds slow down — feels more like a real recording.
-    const eased = 1 - Math.pow(1 - progress, 1.6);
-    timeEl.textContent = fmtTime(FINAL_TIME_SEC * eased);
-    weightEl.textContent = String(Math.round(FINAL_WEIGHT_G * eased));
+  function currentBarHeightAt(progress) {
+    // Interpolate between adjacent bar heights at the continuous bar index.
+    const idxF = progress * TOTAL_BARS;
+    if (idxF <= 0) return 0;
+    if (idxF >= TOTAL_BARS) return BAR_HEIGHTS[TOTAL_BARS - 1];
+    const i = Math.floor(idxF);
+    const frac = idxF - i;
+    const h0 = i === 0 ? 0 : BAR_HEIGHTS[i - 1];
+    const h1 = BAR_HEIGHTS[i];
+    return h0 + (h1 - h0) * frac;
   }
 
-  // ==================== Animation loop ====================
-  let startTs = null;
-  let phase = 'idle'; // 'running' | 'holding' | 'done'
-  const hint = document.getElementById('hint');
+  function updateReadout(progress) {
+    const sec = progress * TOTAL_SEC;
+    const h = currentBarHeightAt(progress);
+    const weight = (h / MAX_BAR_PX) * FINAL_WEIGHT_G;
+    timeEl.textContent = fmtTime(sec);
+    weightEl.textContent = String(Math.round(weight));
+  }
 
-  function frame(ts) {
-    if (startTs === null) startTs = ts;
-    const elapsed = ts - startTs;
+  // ==================== State machine + animation loop ====================
+  // 'idle' (progress=0)  →  START → 'running'  →  STOP → 'paused'  →  START → 'running'
+  // 'running' reaches end → 'finished'  →  START → restart from 0
+  // TARE at any time → 'idle' (progress reset)
+  let phase = 'idle';
+  let progress = 0;
+  let lastTs = null;
+  let rafId = null;
+
+  function tick(ts) {
+    if (phase !== 'running') { lastTs = null; rafId = null; return; }
+    if (lastTs === null) lastTs = ts;
+    const dt = ts - lastTs;
+    lastTs = ts;
+
+    progress += dt / ANIM_DURATION_MS;
+    if (progress >= 1) {
+      progress = 1;
+      phase = 'finished';
+      btnStart.classList.remove('is-on');
+    }
+    render(progress);
+    updateReadout(progress);
 
     if (phase === 'running') {
-      const p = Math.min(1, elapsed / ANIM_DURATION_MS);
-      render(p);
-      updateReadout(p);
-      if (p >= 1) {
-        phase = 'holding';
-        startTs = ts;
-      }
-      requestAnimationFrame(frame);
-      return;
-    }
-
-    if (phase === 'holding') {
-      if (elapsed >= HOLD_MS) {
-        phase = 'done';
-        hint.classList.remove('fade');
-      }
-      requestAnimationFrame(frame);
-      return;
+      rafId = requestAnimationFrame(tick);
+    } else {
+      rafId = null;
     }
   }
 
-  function start() {
+  function play() {
+    if (phase === 'finished') progress = 0;
     phase = 'running';
-    startTs = null;
-    hint.classList.add('fade');
+    lastTs = null;
+    btnStart.classList.add('is-on');
+    if (rafId === null) rafId = requestAnimationFrame(tick);
+  }
+
+  function pause() {
+    phase = 'paused';
+    btnStart.classList.remove('is-on');
+  }
+
+  function tare() {
+    phase = 'idle';
+    progress = 0;
+    btnStart.classList.remove('is-on');
     render(0);
     updateReadout(0);
-    requestAnimationFrame(frame);
   }
 
-  // Tap anywhere to replay (only after the hold completes).
-  document.body.addEventListener('click', () => {
-    if (phase === 'done') start();
+  // ==================== Button wiring ====================
+  const btnStart = document.getElementById('btnStart');
+  const btnTare  = document.getElementById('btnTare');
+
+  btnStart.addEventListener('click', () => {
+    if (phase === 'running') pause();
+    else                     play();
   });
 
-  // Kick off
-  start();
+  btnTare.addEventListener('click', tare);
+
+  // Initial paint
+  render(0);
+  updateReadout(0);
 </script>
 </body>
 </html>
