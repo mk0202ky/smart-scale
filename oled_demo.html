@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>NVSCL_ OLED Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbit&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    color: #fff;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body {
+    font-family: -apple-system, "SF Pro Text", BlinkMacSystemFont, "Hiragino Sans", system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding:
+      env(safe-area-inset-top)
+      env(safe-area-inset-right)
+      env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+  }
+
+  /* ==================== Stage ==================== */
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(14px, 4vmin, 36px);
+    width: min(96vw, 760px);
+  }
+
+  .brand {
+    font-size: clamp(13px, 2.6vmin, 20px);
+    font-weight: 400;
+    letter-spacing: 0.5em;
+    padding-left: 0.5em; /* compensate trailing letter-spacing */
+    color: #fff;
+    user-select: none;
+  }
+
+  .display {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: clamp(20px, 6vmin, 60px);
+  }
+
+  /* ==================== OLED panel ==================== */
+  .oled {
+    width: clamp(240px, 56vmin, 520px);
+    aspect-ratio: 128 / 64;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: #000;
+    position: relative;
+  }
+  canvas#oled {
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  /* ==================== Readout (time + weight) ==================== */
+  .readout {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: clamp(10px, 4vmin, 28px);
+    font-family: "Orbit", "SF Mono", monospace;
+    color: #fff;
+    line-height: 1;
+  }
+  .readout .time,
+  .readout .weight {
+    font-size: clamp(28px, 8.5vmin, 56px);
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    min-width: 4ch;
+  }
+
+  /* ==================== Footer hint ==================== */
+  .hint {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom) + 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    color: rgba(255, 255, 255, 0.28);
+    text-transform: uppercase;
+    transition: opacity 0.4s;
+  }
+  .hint.fade { opacity: 0; }
+
+  /* When iPhone is portrait, rotate the whole stage to mimic the Figma vertical mount */
+  @media (orientation: portrait) {
+    body { align-items: center; justify-content: center; }
+    .stage {
+      transform: rotate(90deg);
+      transform-origin: center center;
+      /* Swap width/height by sizing to viewport's short edge */
+      width: min(96vh, 760px);
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="brand">N V S C L _</div>
+    <div class="display">
+      <div class="oled">
+        <canvas id="oled" width="128" height="64"></canvas>
+      </div>
+      <div class="readout">
+        <div class="time"   id="time">00.00</div>
+        <div class="weight" id="weight">0</div>
+      </div>
+    </div>
+  </div>
+  <div class="hint" id="hint">TAP TO REPLAY</div>
+
+<script>
+  // ==================== OLED frame data (from Figma 5:1655) ====================
+  // Top markers: short dashes left → progressively longer lines → long bar right.
+  // Coordinates are in native 128x64 OLED pixel space.
+  const TOP_MARKS = [
+    { x: 1,  w: 2  },
+    { x: 5,  w: 2  },
+    { x: 9,  w: 2  },
+    { x: 13, w: 2  },
+    { x: 17, w: 2  },
+    { x: 23, w: 10 },
+    { x: 42, w: 26 },
+    { x: 83, w: 45 },
+  ];
+
+  // Vertical bars representing the flow trace, growing left → right.
+  // Each entry: { h: heightInPx } — bottom-anchored, 1px wide, 3px stride from x=0.
+  const BAR_HEIGHTS = [
+    6, 13, 22, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+    34, 36, 39, 41, 43, 44, 46, 46, 47, 48, 49, 50,
+    51, 53, 55, 56, 57, 59, 59, 61, 61, 61, 61, 61,
+    61, 61, 61, 61, 61, 61, 61
+  ];
+  const BAR_W = 1;
+  const BAR_STRIDE = 3;
+  const BAR_X0 = 0;
+
+  // Final readout values (extraction snapshot at end of demo).
+  const FINAL_TIME_SEC = 114; // 01:54
+  const FINAL_WEIGHT_G = 287;
+  const ANIM_DURATION_MS = 5400; // demo speed
+  const HOLD_MS = 1600;          // hold final frame before allowing replay
+
+  // ==================== Canvas setup (HiDPI-aware native pixel grid) ====================
+  const canvas = document.getElementById('oled');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  function clear() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 128, 64);
+  }
+
+  function drawTopMarks(progress) {
+    // progress 0..1 — marks fade in across the first 25% of timeline.
+    const visible = Math.min(1, progress / 0.25);
+    if (visible <= 0) return;
+    ctx.fillStyle = '#d9d9d9';
+    const cutoff = Math.floor(TOP_MARKS.length * visible);
+    for (let i = 0; i < cutoff; i++) {
+      const m = TOP_MARKS[i];
+      ctx.fillRect(m.x, 0, m.w, 1);
+    }
+  }
+
+  function drawBars(progress) {
+    // Bars fill in left → right over the full timeline.
+    ctx.fillStyle = '#d9d9d9';
+    const totalBars = BAR_HEIGHTS.length;
+    const filled = progress * totalBars;
+    for (let i = 0; i < totalBars; i++) {
+      const reveal = Math.max(0, Math.min(1, filled - i));
+      if (reveal <= 0) continue;
+      const h = Math.round(BAR_HEIGHTS[i] * reveal);
+      if (h <= 0) continue;
+      const x = BAR_X0 + i * BAR_STRIDE;
+      ctx.fillRect(x, 64 - h, BAR_W, h);
+    }
+  }
+
+  function render(progress) {
+    clear();
+    drawTopMarks(progress);
+    drawBars(progress);
+  }
+
+  // ==================== Readout updates ====================
+  const timeEl = document.getElementById('time');
+  const weightEl = document.getElementById('weight');
+
+  function fmtTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return String(m).padStart(2, '0') + '.' + String(s).padStart(2, '0');
+  }
+
+  function updateReadout(progress) {
+    // ease-out so the trailing seconds slow down — feels more like a real recording.
+    const eased = 1 - Math.pow(1 - progress, 1.6);
+    timeEl.textContent = fmtTime(FINAL_TIME_SEC * eased);
+    weightEl.textContent = String(Math.round(FINAL_WEIGHT_G * eased));
+  }
+
+  // ==================== Animation loop ====================
+  let startTs = null;
+  let phase = 'idle'; // 'running' | 'holding' | 'done'
+  const hint = document.getElementById('hint');
+
+  function frame(ts) {
+    if (startTs === null) startTs = ts;
+    const elapsed = ts - startTs;
+
+    if (phase === 'running') {
+      const p = Math.min(1, elapsed / ANIM_DURATION_MS);
+      render(p);
+      updateReadout(p);
+      if (p >= 1) {
+        phase = 'holding';
+        startTs = ts;
+      }
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    if (phase === 'holding') {
+      if (elapsed >= HOLD_MS) {
+        phase = 'done';
+        hint.classList.remove('fade');
+      }
+      requestAnimationFrame(frame);
+      return;
+    }
+  }
+
+  function start() {
+    phase = 'running';
+    startTs = null;
+    hint.classList.add('fade');
+    render(0);
+    updateReadout(0);
+    requestAnimationFrame(frame);
+  }
+
+  // Tap anywhere to replay (only after the hold completes).
+  document.body.addEventListener('click', () => {
+    if (phase === 'done') start();
+  });
+
+  // Kick off
+  start();
+</script>
+</body>
+</html>
